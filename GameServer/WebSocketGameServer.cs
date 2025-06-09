@@ -4,83 +4,104 @@ using System.Text;
 using System.Text.Json;
 using Serilog;
 using Shared.Messages;
-using GameServer.Services;
-using GameServer.Handlers;
+using System.Collections.Concurrent;
+
+namespace GameServer;
 
 public class WebSocketGameServer
 {
+    private readonly HttpListener _httpListener;
+    private readonly ConcurrentDictionary<string, WebSocket> _connectedClients = new();
     private readonly int _port;
-    private readonly PlayerService _playerService = new();
-    private readonly Dictionary<MessageType, IMessageHandler> _handlers;
 
     public WebSocketGameServer(int port)
     {
         _port = port;
-
-        // Register handlers for each message type
-        _handlers = new()
-        {
-            { MessageType.Login, new LoginHandler(_playerService) }
-            // Add additional handlers here
-        };
+        _httpListener = new HttpListener();
+        _httpListener.Prefixes.Add($"http://localhost:{_port}/ws/");
     }
 
-    public async Task StartAsync()
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        HttpListener listener = new();
-        listener.Prefixes.Add($"http://localhost:{_port}/ws/");
-        listener.Start();
+        _httpListener.Start();
         Log.Information("Server listening on ws://localhost:{Port}/ws/", _port);
 
-        while (true)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            var context = await listener.GetContextAsync();
-            if (context.Request.IsWebSocketRequest)
+            var httpContext = await _httpListener.GetContextAsync();
+            if (httpContext.Request.IsWebSocketRequest)
             {
-                _ = HandleConnectionAsync(context);
+                _ = HandleClientAsync(httpContext);
             }
             else
             {
-                context.Response.StatusCode = 400;
-                context.Response.Close();
+                httpContext.Response.StatusCode = 400;
+                httpContext.Response.Close();
             }
         }
     }
 
-    private async Task HandleConnectionAsync(HttpListenerContext context)
+    private async Task HandleClientAsync(HttpListenerContext context)
     {
-        WebSocketContext wsContext = await context.AcceptWebSocketAsync(null);
-        WebSocket socket = wsContext.WebSocket;
-
-        Log.Information("New connection established");
-
-        var buffer = new byte[1024 * 4];
-        while (socket.State == WebSocketState.Open)
+        WebSocket webSocket = null!;
+        string? playerId = null;
+        try
         {
-            var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-            if (result.MessageType == WebSocketMessageType.Text)
+            var wsContext = await context.AcceptWebSocketAsync(null);
+            webSocket = wsContext.WebSocket;
+
+            Log.Information("New WebSocket connection established.");
+
+            var buffer = new byte[4096];
+
+            while (webSocket.State == WebSocketState.Open)
             {
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                Log.Information("Received: {Message}", message);
-
-                var socketMessage = JsonSerializer.Deserialize<SocketMessage>(message);
-                if (socketMessage != null)
+                var result = await webSocket.ReceiveAsync(buffer, CancellationToken.None);
+                if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    await RouteMessage(socket, socketMessage);
+                    break;
                 }
+
+                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                Log.Debug("Received message: {Json}", json);
+
+                var socketMsg = JsonSerializer.Deserialize<SocketMessage>(json);
+                if (socketMsg == null)
+                {
+                    Log.Warning("Invalid message format");
+                    continue;
+                }
+
+                // Route message by type (to handler, to be implemented in next step)
+                await RouteMessageAsync(socketMsg, webSocket, playerId);
             }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error handling client.");
+        }
+        finally
+        {
+            if (playerId != null)
+            {
+                _connectedClients.TryRemove(playerId, out _);
+            }
+
+            if (webSocket != null)
+                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+            Log.Information("WebSocket connection closed.");
         }
     }
 
-    private async Task RouteMessage(WebSocket socket, SocketMessage socketMessage)
+    // Placeholder for routing logic. To be implemented next step.
+    private async Task RouteMessageAsync(SocketMessage socketMsg, WebSocket webSocket, string? playerId)
     {
-        if (_handlers.TryGetValue(socketMessage.Type, out var handler))
-        {
-            await handler.HandleAsync(socket, socketMessage);
-        }
-        else
-        {
-            Log.Warning("No handler registered for message type {Type}", socketMessage.Type);
-        }
+        // Example: Just echo back for now.
+        var response = JsonSerializer.Serialize(socketMsg);
+        await webSocket.SendAsync(
+            Encoding.UTF8.GetBytes(response),
+            WebSocketMessageType.Text,
+            true,
+            CancellationToken.None);
     }
 }

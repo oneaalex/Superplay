@@ -5,7 +5,5 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .CreateLogger();
 
-Log.Information("Starting GameServer...");
-
-var server = new WebSocketGameServer(8080);
+var server = new GameServer.WebSocketGameServer(8080);
 await server.StartAsync();

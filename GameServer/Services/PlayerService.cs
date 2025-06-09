@@ -17,12 +17,12 @@ public class PlayerService : IPlayerRepository
         });
     }
 
-    public bool TryGetPlayer(string playerId, out PlayerState? state) => _players.TryGetValue(playerId, out state);
+    public bool TryGetPlayer(string playerId, out PlayerState? state) => _players.TryGetValue("P_" + playerId, out state);
 
     public bool UpdateResource(string playerId, ResourceType type, int amount, out int newBalance)
     {
         newBalance = 0;
-        if (!_players.TryGetValue(playerId, out var player))
+        if (!_players.TryGetValue("P_" + playerId, out var player))
             return false;
 
         lock (player)
@@ -37,8 +37,8 @@ public class PlayerService : IPlayerRepository
 
     public bool TransferResource(string fromPlayerId, string toPlayerId, ResourceType type, int value)
     {
-        if (!_players.TryGetValue(fromPlayerId, out var from) ||
-            !_players.TryGetValue(toPlayerId, out var to))
+        if (!_players.TryGetValue("P_" + fromPlayerId, out var from) ||
+            !_players.TryGetValue("P_" + toPlayerId, out var to))
             return false;
 
         lock (from)

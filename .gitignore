@@ -7,3 +7,7 @@
 /GameServerSolution/.vs
 /GameServerSolution/obj
 /Shared/obj
+/GameServerSolution/bin/Debug/net8.0
+/GameClient/bin/Debug/net8.0
+/GameServer/bin/Debug/net8.0
+/Shared/bin/Debug/net8.0

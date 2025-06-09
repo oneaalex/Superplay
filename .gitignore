@@ -1,0 +1,9 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/GameClient/obj
+/GameServer/obj
+/GameServerSolution/.vs
+/GameServerSolution/obj
+/Shared/obj

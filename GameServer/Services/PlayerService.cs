@@ -7,12 +7,12 @@ namespace GameServer.Services;
 public class PlayerService : IPlayerRepository
 {
     private readonly ConcurrentDictionary<string, PlayerState> _players = new();
+    private static string MakeKey(string playerId) => $"P_{playerId}";
 
     public PlayerState GetOrCreatePlayer(string playerId, string deviceId)
     {
-        // Always store with "P_" prefix for consistency
-        var key = "P_" + playerId;
-        return _players.GetOrAdd(key, id => new PlayerState
+        var key = MakeKey(playerId);
+        return _players.GetOrAdd(key, _ => new PlayerState
         {
             PlayerId = key,
             DeviceId = deviceId
@@ -20,22 +20,16 @@ public class PlayerService : IPlayerRepository
     }
 
     public bool TryGetPlayer(string playerId, out PlayerState? state)
-    {
-        // Always look up with "P_" prefix
-        return _players.TryGetValue("P_" + playerId, out state);
-    }
+        => _players.TryGetValue(MakeKey(playerId), out state);
 
     public bool UpdateResource(string playerId, ResourceType type, int amount, out int newBalance)
     {
         newBalance = 0;
-        if (!TryGetPlayer(playerId, out var player))
+        if (!TryGetPlayer(playerId, out var player) || player is null)
             return false;
-
-        lock (player!)
+        lock (player)
         {
-            if (!player.Resources.ContainsKey(type))
-                player.Resources[type] = 0;
-            player.Resources[type] += amount;
+            player.Resources[type] = player.Resources.GetValueOrDefault(type, 0) + amount;
             newBalance = player.Resources[type];
         }
         return true;
@@ -43,24 +37,20 @@ public class PlayerService : IPlayerRepository
 
     public bool TransferResource(string fromPlayerId, string toPlayerId, ResourceType type, int value)
     {
-        if (!TryGetPlayer(fromPlayerId, out var from) ||
-            !TryGetPlayer(toPlayerId, out var to))
+        if (!TryGetPlayer(fromPlayerId, out var from) || from is null ||
+            !TryGetPlayer(toPlayerId, out var to) || to is null)
             return false;
-
-        lock (from!)
-            lock (to!)
+        lock (from)
+            lock (to)
             {
-                if (!from.Resources.ContainsKey(type) || from.Resources[type] < value)
+                if (from.Resources.GetValueOrDefault(type, 0) < value)
                     return false;
-
                 from.Resources[type] -= value;
-                if (!to.Resources.ContainsKey(type))
-                    to.Resources[type] = 0;
-                to.Resources[type] += value;
+                to.Resources[type] = to.Resources.GetValueOrDefault(type, 0) + value;
             }
         return true;
     }
 
     public bool RemovePlayer(string playerId)
-        => _players.TryRemove("P_" + playerId, out _);
+        => _players.TryRemove(MakeKey(playerId), out _);
 }

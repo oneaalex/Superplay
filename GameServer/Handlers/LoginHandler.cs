@@ -23,8 +23,9 @@ public class LoginHandler : IMessageHandler
             return;
         }
 
-        // Check if player already connected
-        playerId = playerId ?? "P_" + request.DeviceId;
+        playerId = "P_" + request.DeviceId;
+
+        // Check for already-connected player
         if (!context.ConnectedPlayers.TryAdd(playerId, socket))
         {
             await Send(socket, new SocketMessage
@@ -35,8 +36,8 @@ public class LoginHandler : IMessageHandler
             return;
         }
 
-        // Create player state if not exists
-        context.PlayerStates.TryAdd(playerId, new PlayerState { PlayerId = playerId, DeviceId = request.DeviceId });
+        // Here is where you use PlayerService:
+        var player = context.PlayerService.GetOrCreatePlayer(playerId, request.DeviceId);
 
         await Send(socket, new SocketMessage
         {

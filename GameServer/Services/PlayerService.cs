@@ -1,26 +1,60 @@
-using System.Net.WebSockets;
+using System.Collections.Concurrent;
+using Shared.Models;
 using Shared.Messages;
 
 namespace GameServer.Services;
 
-public class PlayerService
+public class PlayerService : IPlayerRepository
 {
-    // Maps deviceId to (playerId, socket)
-    private readonly Dictionary<string, (string playerId, WebSocket socket)> _onlinePlayers = new();
-    private int _nextId = 1;
+    private readonly ConcurrentDictionary<string, PlayerState> _players = new();
 
-    public LoginResponse HandleLogin(string deviceId, WebSocket socket)
+    public PlayerState GetOrCreatePlayer(string playerId, string deviceId)
     {
-        if (_onlinePlayers.ContainsKey(deviceId))
+        return _players.GetOrAdd(playerId, id => new PlayerState
         {
-            return new LoginResponse { Error = "Already connected" };
-        }
-
-        var playerId = $"P{_nextId++}";
-        _onlinePlayers[deviceId] = (playerId, socket);
-
-        return new LoginResponse { PlayerId = playerId };
+            PlayerId = playerId,
+            DeviceId = deviceId
+        });
     }
 
-    // Extend with more player operations
+    public bool TryGetPlayer(string playerId, out PlayerState? state) => _players.TryGetValue(playerId, out state);
+
+    public bool UpdateResource(string playerId, ResourceType type, int amount, out int newBalance)
+    {
+        newBalance = 0;
+        if (!_players.TryGetValue(playerId, out var player))
+            return false;
+
+        lock (player)
+        {
+            if (!player.Resources.ContainsKey(type))
+                player.Resources[type] = 0;
+            player.Resources[type] += amount;
+            newBalance = player.Resources[type];
+        }
+        return true;
+    }
+
+    public bool TransferResource(string fromPlayerId, string toPlayerId, ResourceType type, int value)
+    {
+        if (!_players.TryGetValue(fromPlayerId, out var from) ||
+            !_players.TryGetValue(toPlayerId, out var to))
+            return false;
+
+        lock (from)
+            lock (to)
+            {
+                if (!from.Resources.ContainsKey(type) || from.Resources[type] < value)
+                    return false;
+
+                from.Resources[type] -= value;
+                if (!to.Resources.ContainsKey(type))
+                    to.Resources[type] = 0;
+                to.Resources[type] += value;
+            }
+        return true;
+    }
+
+    public bool RemovePlayer(string playerId)
+        => _players.TryRemove(playerId, out _);
 }

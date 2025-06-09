@@ -6,5 +6,9 @@ public class PlayerState
 {
     public string PlayerId { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;
-    public Dictionary<ResourceType, int> Resources { get; set; } = new();
+    public Dictionary<ResourceType, int> Resources { get; set; } = new()
+    {
+        { ResourceType.Coins, 0 },
+        { ResourceType.Rolls, 0 }
+    };
 }

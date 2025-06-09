@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using Serilog;
 using Shared.Messages;
-using System.Collections.Concurrent;
 using GameServer.Handlers;
 
 namespace GameServer;
@@ -13,28 +12,16 @@ public class WebSocketGameServer
 {
     private readonly HttpListener _httpListener;
     private readonly int _port;
-    private readonly Dictionary<MessageType, IMessageHandler> _handlers = new();
-    private readonly GameServerContext _context = new();
+    private readonly HandlerRegistry _handlerRegistry;
+    private readonly GameServerContext _context;
 
-    public WebSocketGameServer(int port)
+    public WebSocketGameServer(int port, HandlerRegistry handlerRegistry, GameServerContext context)
     {
         _port = port;
+        _handlerRegistry = handlerRegistry;
+        _context = context;
         _httpListener = new HttpListener();
         _httpListener.Prefixes.Add($"http://localhost:{_port}/ws/");
-        RegisterHandlers();
-    }
-
-    private void RegisterHandlers()
-    {
-        AddHandler(new LoginHandler());
-        AddHandler(new UpdateResourcesHandler());
-        AddHandler(new SendGiftHandler());
-        // Add more handlers as needed
-    }
-
-    private void AddHandler(IMessageHandler handler)
-    {
-        _handlers[handler.MessageType] = handler;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -114,9 +101,22 @@ public class WebSocketGameServer
 
     private async Task RouteMessageAsync(SocketMessage socketMsg, WebSocket webSocket, string? playerId)
     {
-        if (_handlers.TryGetValue(socketMsg.Type, out var handler))
+        if (socketMsg == null)
         {
-            await handler.HandleAsync(socketMsg, webSocket, _context, playerId);
+            Log.Warning("Received a null SocketMessage.");
+            return;
+        }
+
+        if (_handlerRegistry.TryGetHandler(socketMsg.Type, out var handler))
+        {
+            if (handler != null) // Ensure handler is not null
+            {
+                await handler.HandleAsync(socketMsg, webSocket, _context, playerId);
+            }
+            else
+            {
+                Log.Warning("Handler retrieved from registry is null for message type: {Type}", socketMsg.Type);
+            }
         }
         else
         {

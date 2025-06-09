@@ -10,22 +10,28 @@ public class PlayerService : IPlayerRepository
 
     public PlayerState GetOrCreatePlayer(string playerId, string deviceId)
     {
-        return _players.GetOrAdd(playerId, id => new PlayerState
+        // Always store with "P_" prefix for consistency
+        var key = "P_" + playerId;
+        return _players.GetOrAdd(key, id => new PlayerState
         {
-            PlayerId = playerId,
+            PlayerId = key,
             DeviceId = deviceId
         });
     }
 
-    public bool TryGetPlayer(string playerId, out PlayerState? state) => _players.TryGetValue("P_" + playerId, out state);
+    public bool TryGetPlayer(string playerId, out PlayerState? state)
+    {
+        // Always look up with "P_" prefix
+        return _players.TryGetValue("P_" + playerId, out state);
+    }
 
     public bool UpdateResource(string playerId, ResourceType type, int amount, out int newBalance)
     {
         newBalance = 0;
-        if (!_players.TryGetValue("P_" + playerId, out var player))
+        if (!TryGetPlayer(playerId, out var player))
             return false;
 
-        lock (player)
+        lock (player!)
         {
             if (!player.Resources.ContainsKey(type))
                 player.Resources[type] = 0;
@@ -37,12 +43,12 @@ public class PlayerService : IPlayerRepository
 
     public bool TransferResource(string fromPlayerId, string toPlayerId, ResourceType type, int value)
     {
-        if (!_players.TryGetValue("P_" + fromPlayerId, out var from) ||
-            !_players.TryGetValue("P_" + toPlayerId, out var to))
+        if (!TryGetPlayer(fromPlayerId, out var from) ||
+            !TryGetPlayer(toPlayerId, out var to))
             return false;
 
-        lock (from)
-            lock (to)
+        lock (from!)
+            lock (to!)
             {
                 if (!from.Resources.ContainsKey(type) || from.Resources[type] < value)
                     return false;
@@ -56,5 +62,5 @@ public class PlayerService : IPlayerRepository
     }
 
     public bool RemovePlayer(string playerId)
-        => _players.TryRemove(playerId, out _);
+        => _players.TryRemove("P_" + playerId, out _);
 }

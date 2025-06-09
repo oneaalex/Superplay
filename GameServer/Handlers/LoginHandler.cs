@@ -1,6 +1,6 @@
 using System.Net.WebSockets;
-using System.Text.Json;
 using System.Text;
+using System.Text.Json;
 using Shared.Messages;
 using Shared.Models;
 
@@ -13,7 +13,7 @@ public class LoginHandler : IMessageHandler
     public async Task HandleAsync(SocketMessage message, WebSocket socket, GameServerContext context, string? playerId)
     {
         var request = JsonSerializer.Deserialize<LoginRequest>(message.Payload);
-        if (request == null || string.IsNullOrEmpty(request.DeviceId))
+        if (request == null || string.IsNullOrWhiteSpace(request.DeviceId))
         {
             await Send(socket, new SocketMessage
             {
@@ -25,7 +25,7 @@ public class LoginHandler : IMessageHandler
 
         playerId = "P_" + request.DeviceId;
 
-        // Check for already-connected player
+        // Check if player is already connected
         if (!context.ConnectedPlayers.TryAdd(playerId, socket))
         {
             await Send(socket, new SocketMessage
@@ -36,7 +36,7 @@ public class LoginHandler : IMessageHandler
             return;
         }
 
-        // Here is where you use PlayerService:
+        // Create or get player state
         var player = context.PlayerService.GetOrCreatePlayer(playerId, request.DeviceId);
 
         await Send(socket, new SocketMessage

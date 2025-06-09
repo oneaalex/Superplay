@@ -4,37 +4,71 @@ using System.Text.Json;
 using Serilog;
 using Shared.Messages;
 
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .MinimumLevel.Debug()
-    .CreateLogger();
-
-Log.Information("Starting GameClient...");
-
-using var client = new ClientWebSocket();
-await client.ConnectAsync(new Uri("ws://localhost:8080/ws/"), CancellationToken.None);
-Log.Information("Connected to server");
-
-// Send Login
-var login = new LoginRequest { DeviceId = "my-device-123" };
-var socketMessage = new SocketMessage
+class Program
 {
-    Type = MessageType.Login,
-    Payload = JsonSerializer.Serialize(login)
-};
-var json = JsonSerializer.Serialize(socketMessage);
-await client.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, CancellationToken.None);
+    static async Task Main(string[] args)
+    {
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.Console()
+            .MinimumLevel.Debug()
+            .CreateLogger();
 
-// Read Response
-var buffer = new byte[1024 * 4];
-var result = await client.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-var responseJson = Encoding.UTF8.GetString(buffer, 0, result.Count);
-Log.Information("Server responded: {Response}", responseJson);
+        using var ws = new ClientWebSocket();
+        var uri = new Uri("ws://localhost:8080/ws/");
+        await ws.ConnectAsync(uri, CancellationToken.None);
 
-// Parse and display LoginResponse if needed
-var responseMsg = JsonSerializer.Deserialize<SocketMessage>(responseJson);
-if (responseMsg?.Type == MessageType.Login)
-{
-    var loginResp = JsonSerializer.Deserialize<LoginResponse>(responseMsg.Payload);
-    Log.Information("PlayerId: {PlayerId}, Error: {Error}", loginResp?.PlayerId, loginResp?.Error);
+        Log.Information("Connected to GameServer!");
+
+        // Start a task to receive messages
+        var receiveTask = Task.Run(async () =>
+        {
+            var buffer = new byte[4096];
+            while (ws.State == WebSocketState.Open)
+            {
+                var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    Log.Information("Server closed the connection.");
+                    break;
+                }
+                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                Log.Information("Received: {Json}", json);
+            }
+        });
+
+        // Main thread: Send initial login, then allow more input
+        while (ws.State == WebSocketState.Open)
+        {
+            Console.WriteLine("Enter command (login, update, gift, quit):");
+            var input = Console.ReadLine();
+            if (input == "quit")
+            {
+                break;
+            }
+            SocketMessage? msg = null;
+            switch (input)
+            {
+                case "login":
+                    Console.Write("DeviceId: ");
+                    var deviceId = Console.ReadLine() ?? "";
+                    var loginReq = new LoginRequest { DeviceId = deviceId };
+                    msg = new SocketMessage
+                    {
+                        Type = MessageType.Login,
+                        Payload = JsonSerializer.Serialize(loginReq)
+                    };
+                    break;
+                    // Add cases for "update", "gift" etc.
+            }
+            if (msg != null)
+            {
+                var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(msg));
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+        }
+
+        // Optional: gracefully close connection
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+        Log.Information("Client closed.");
+    }
 }

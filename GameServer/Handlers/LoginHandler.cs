@@ -1,34 +1,53 @@
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
-using Serilog;
+using System.Text;
 using Shared.Messages;
-using GameServer.Services;
+using Shared.Models;
 
 namespace GameServer.Handlers;
 
 public class LoginHandler : IMessageHandler
 {
-    private readonly PlayerService _playerService;
+    public MessageType MessageType => MessageType.Login;
 
-    public LoginHandler(PlayerService playerService)
+    public async Task HandleAsync(SocketMessage message, WebSocket socket, GameServerContext context, string? playerId)
     {
-        _playerService = playerService;
+        var request = JsonSerializer.Deserialize<LoginRequest>(message.Payload);
+        if (request == null || string.IsNullOrEmpty(request.DeviceId))
+        {
+            await Send(socket, new SocketMessage
+            {
+                Type = MessageType.LoginResponse,
+                Payload = JsonSerializer.Serialize(new LoginResponse { Error = "Invalid login request." })
+            });
+            return;
+        }
+
+        // Check if player already connected
+        playerId = playerId ?? "P_" + request.DeviceId;
+        if (!context.ConnectedPlayers.TryAdd(playerId, socket))
+        {
+            await Send(socket, new SocketMessage
+            {
+                Type = MessageType.LoginResponse,
+                Payload = JsonSerializer.Serialize(new LoginResponse { Error = "Already connected." })
+            });
+            return;
+        }
+
+        // Create player state if not exists
+        context.PlayerStates.TryAdd(playerId, new PlayerState { PlayerId = playerId, DeviceId = request.DeviceId });
+
+        await Send(socket, new SocketMessage
+        {
+            Type = MessageType.LoginResponse,
+            Payload = JsonSerializer.Serialize(new LoginResponse { PlayerId = playerId })
+        });
     }
 
-    public async Task HandleAsync(WebSocket socket, SocketMessage message)
+    private static async Task Send(WebSocket socket, SocketMessage msg)
     {
-        var loginRequest = JsonSerializer.Deserialize<LoginRequest>(message.Payload);
-        var response = _playerService.HandleLogin(loginRequest?.DeviceId ?? "", socket);
-
-        var responseMessage = new SocketMessage
-        {
-            Type = MessageType.Login,
-            Payload = JsonSerializer.Serialize(response)
-        };
-
-        var json = JsonSerializer.Serialize(responseMessage);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(msg));
+        await socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
     }
 }

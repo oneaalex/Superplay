@@ -5,20 +5,36 @@ using System.Text.Json;
 using Serilog;
 using Shared.Messages;
 using System.Collections.Concurrent;
+using GameServer.Handlers;
 
 namespace GameServer;
 
 public class WebSocketGameServer
 {
     private readonly HttpListener _httpListener;
-    private readonly ConcurrentDictionary<string, WebSocket> _connectedClients = new();
     private readonly int _port;
+    private readonly Dictionary<MessageType, IMessageHandler> _handlers = new();
+    private readonly GameServerContext _context = new();
 
     public WebSocketGameServer(int port)
     {
         _port = port;
         _httpListener = new HttpListener();
         _httpListener.Prefixes.Add($"http://localhost:{_port}/ws/");
+        RegisterHandlers();
+    }
+
+    private void RegisterHandlers()
+    {
+        AddHandler(new LoginHandler());
+        AddHandler(new UpdateResourcesHandler());
+        AddHandler(new SendGiftHandler());
+        // Add more handlers as needed
+    }
+
+    private void AddHandler(IMessageHandler handler)
+    {
+        _handlers[handler.MessageType] = handler;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -72,9 +88,12 @@ public class WebSocketGameServer
                     continue;
                 }
 
-                // Route message by type (to handler, to be implemented in next step)
                 await RouteMessageAsync(socketMsg, webSocket, playerId);
             }
+        }
+        catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
+        {
+            Log.Information("Client disconnected gracefully.");
         }
         catch (Exception ex)
         {
@@ -84,7 +103,7 @@ public class WebSocketGameServer
         {
             if (playerId != null)
             {
-                _connectedClients.TryRemove(playerId, out _);
+                _context.ConnectedPlayers.TryRemove(playerId, out _);
             }
 
             if (webSocket != null)
@@ -93,15 +112,22 @@ public class WebSocketGameServer
         }
     }
 
-    // Placeholder for routing logic. To be implemented next step.
     private async Task RouteMessageAsync(SocketMessage socketMsg, WebSocket webSocket, string? playerId)
     {
-        // Example: Just echo back for now.
-        var response = JsonSerializer.Serialize(socketMsg);
-        await webSocket.SendAsync(
-            Encoding.UTF8.GetBytes(response),
-            WebSocketMessageType.Text,
-            true,
-            CancellationToken.None);
+        if (_handlers.TryGetValue(socketMsg.Type, out var handler))
+        {
+            await handler.HandleAsync(socketMsg, webSocket, _context, playerId);
+        }
+        else
+        {
+            Log.Warning("No handler for message type: {Type}", socketMsg.Type);
+            var errorMsg = new SocketMessage
+            {
+                Type = MessageType.Error,
+                Payload = JsonSerializer.Serialize(new { Error = "Unknown message type." })
+            };
+            var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(errorMsg));
+            await webSocket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+        }
     }
 }

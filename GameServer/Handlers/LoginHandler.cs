@@ -23,10 +23,8 @@ public class LoginHandler : IMessageHandler
             return;
         }
 
-        playerId = "P_" + request.DeviceId;
-
         // Check if player is already connected
-        if (!context.ConnectedPlayers.TryAdd(playerId, socket))
+        if (!context.ConnectedPlayers.TryAdd(request.DeviceId, socket))
         {
             await Send(socket, new SocketMessage
             {
@@ -37,12 +35,12 @@ public class LoginHandler : IMessageHandler
         }
 
         // Create or get player state
-        var player = context.PlayerService.GetOrCreatePlayer(playerId, request.DeviceId);
+        var player = context.PlayerService.GetOrCreatePlayer(request.DeviceId, request.DeviceId);
 
         await Send(socket, new SocketMessage
         {
             Type = MessageType.LoginResponse,
-            Payload = JsonSerializer.Serialize(new LoginResponse { PlayerId = playerId })
+            Payload = JsonSerializer.Serialize(new LoginResponse { PlayerId = player.PlayerId })
         });
     }
 

@@ -22,10 +22,13 @@ public class PlayerService : IPlayerRepository
     public bool TryGetPlayer(string playerId, out PlayerState? state)
         => _players.TryGetValue(MakeKey(playerId), out state);
 
+    public bool TryGetPlayerById(string playerId, out PlayerState? state)
+        => _players.TryGetValue(playerId, out state);
+
     public bool UpdateResource(string playerId, ResourceType type, int amount, out int newBalance)
     {
         newBalance = 0;
-        if (!TryGetPlayer(playerId, out var player) || player is null)
+        if (!TryGetPlayerById(playerId, out var player) || player is null)
             return false;
         lock (player)
         {
@@ -37,8 +40,8 @@ public class PlayerService : IPlayerRepository
 
     public bool TransferResource(string fromPlayerId, string toPlayerId, ResourceType type, int value)
     {
-        if (!TryGetPlayer(fromPlayerId, out var from) || from is null ||
-            !TryGetPlayer(toPlayerId, out var to) || to is null)
+        if (!TryGetPlayerById(fromPlayerId, out var from) || from is null ||
+            !TryGetPlayerById(toPlayerId, out var to) || to is null)
             return false;
         lock (from)
             lock (to)

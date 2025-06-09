@@ -4,8 +4,8 @@ using Shared.Messages;
 
 public class PlayerState
 {
-    public string PlayerId { get; set; } = string.Empty;
-    public string DeviceId { get; set; } = string.Empty;
+    public string PlayerId { get; init; } = string.Empty;
+    public string DeviceId { get; init; } = string.Empty;
     public Dictionary<ResourceType, int> Resources { get; set; } = new()
     {
         { ResourceType.Coins, 0 },

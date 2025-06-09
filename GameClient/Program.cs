@@ -10,6 +10,7 @@ class Program
     {
         Log.Logger = new LoggerConfiguration()
             .WriteTo.Console()
+            .WriteTo.File("client.log")
             .MinimumLevel.Debug()
             .CreateLogger();
 

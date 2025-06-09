@@ -7,7 +7,14 @@ namespace GameServer.Services;
 public class PlayerService : IPlayerRepository
 {
     private readonly ConcurrentDictionary<string, PlayerState> _players = new();
+    private readonly ConcurrentDictionary<string, bool> _activeLogins = new();
     private static string MakeKey(string playerId) => $"P_{playerId}";
+
+    public bool TryLogin(string playerId)
+        => _activeLogins.TryAdd(playerId, true);
+
+    public void Logout(string playerId)
+        => _activeLogins.TryRemove(playerId, out _);
 
     public PlayerState GetOrCreatePlayer(string playerId, string deviceId)
     {

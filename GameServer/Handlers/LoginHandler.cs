@@ -23,6 +23,17 @@ public class LoginHandler : IMessageHandler
             return;
         }
 
+        // Check for duplicate login using PlayerService
+        if (!context.PlayerService.TryLogin(request.DeviceId))
+        {
+            await Send(socket, new SocketMessage
+            {
+                Type = MessageType.LoginResponse,
+                Payload = JsonSerializer.Serialize(new LoginResponse { Error = "Already logged in elsewhere." })
+            });
+            return;
+        }
+
         // Check if player is already connected
         if (!context.ConnectedPlayers.TryAdd(request.DeviceId, socket))
         {
